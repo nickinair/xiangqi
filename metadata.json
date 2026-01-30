@@ -1,0 +1,5 @@
+{
+  "name": "Zen Xiangqi (Chinese Chess)",
+  "description": "An elegant, wood-textured Chinese Chess game featuring local PvP, AI opponents, and simulated online lobbies. Includes undo consent mechanics and player profiles.",
+  "requestFramePermissions": []
+}
