@@ -28,7 +28,7 @@ export const TRANSLATIONS = {
     undoRequest: '悔棋请求',
     undoRequestMsg: (color: string) => `${color} 想要悔棋，是否同意？`,
     red: '红方',
-    green: '绿方', 
+    green: '绿方',
     deny: '拒绝',
     allow: '同意',
     wins: '获胜！',
@@ -73,6 +73,9 @@ export const TRANSLATIONS = {
     ruleRiver: '楚河汉界：中间的空白地带。象不能过河，兵过河后变强。',
     rulePalace: '九宫：双方底部的米字格区域，将和士不能走出此区域。',
     ruleWin: '获胜条件：吃掉对方的帅/将，或者让对方无路可走（困毙）。',
+    opponentDisconnected: '对手已断线',
+    waitingForReconnect: '正在等待重连...',
+    rejoin: '重返房间',
   },
   en: {
     appTitle: 'Zen Xiangqi',
@@ -146,5 +149,8 @@ export const TRANSLATIONS = {
     ruleRiver: 'The River: Elephants cannot cross. Soldiers become stronger after crossing.',
     rulePalace: 'The Palace: The 3x3 grid with diagonals. General and Advisors cannot leave it.',
     ruleWin: 'Winning: Capture the enemy General or leave them with no legal moves.',
+    opponentDisconnected: 'Opponent Disconnected',
+    waitingForReconnect: 'Waiting for reconnection...',
+    rejoin: 'Rejoin',
   }
 };

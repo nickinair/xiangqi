@@ -6,7 +6,8 @@ module.exports = (io, supabase) => {
         return Array.from(rooms.values()).map(r => ({
             id: r.id,
             name: r.name,
-            players: r.players.length
+            players: r.players.length,
+            playerNames: r.players.map(p => p.username)
         }));
     };
 
@@ -27,7 +28,7 @@ module.exports = (io, supabase) => {
             const room = {
                 id: roomId,
                 name: roomName || `${username}'s Room`,
-                players: [{ id: socket.id, username, color: 'red' }],
+                players: [{ id: socket.id, username, color: 'red', connected: true }],
                 spectators: [],
                 gameState: null // Will be initialized when 2nd player joins or game starts
             };
@@ -45,13 +46,46 @@ module.exports = (io, supabase) => {
                 return callback({ success: false, error: 'Room not found' });
             }
 
+            // Check for reconnection
+            const existingPlayerIndex = room.players.findIndex(p => p.username === username);
+            if (existingPlayerIndex !== -1) {
+                const player = room.players[existingPlayerIndex];
+
+                // If previously marked as disconnected, cancel the timeout
+                if (player.disconnectTimeout) {
+                    clearTimeout(player.disconnectTimeout);
+                    player.disconnectTimeout = null;
+                }
+
+                player.id = socket.id; // Update socket ID
+                player.connected = true;
+                socket.join(roomId);
+
+                console.log(`User ${username} reconnected to room ${roomId}`);
+
+                // Notify room
+                io.to(roomId).emit('player_reconnected', { username });
+
+                // Send success with current room state
+                callback({ success: true, room });
+
+                // If game was running, re-send state
+                if (room.gameState) {
+                    socket.emit('game_state_sync', {
+                        gameState: room.gameState,
+                        players: room.players
+                    });
+                }
+                return;
+            }
+
             if (room.players.length >= 2) {
                 return callback({ success: false, error: 'Room is full' });
             }
 
             // Determine color based on existing player
             const color = room.players[0].color === 'red' ? 'green' : 'red';
-            const player = { id: socket.id, username, color };
+            const player = { id: socket.id, username, color, connected: true };
             room.players.push(player);
             socket.join(roomId);
 
@@ -63,12 +97,12 @@ module.exports = (io, supabase) => {
             callback({ success: true, room });
 
             // If 2 players, start game? 
-            // Or wait for 'start_game' event? 
-            // For simplicity, let's say game acts as started when 2 players are there.
-            io.to(roomId).emit('game_start', {
-                players: room.players,
-                currentTurn: 'red'
-            });
+            if (room.players.length === 2 && !room.gameState) {
+                io.to(roomId).emit('game_start', {
+                    players: room.players,
+                    currentTurn: 'red'
+                });
+            }
         });
 
         socket.on('start_game', ({ roomId }) => {
@@ -107,30 +141,70 @@ module.exports = (io, supabase) => {
         });
 
         socket.on('leave_room', ({ roomId }) => {
-            handleLeave(socket, roomId);
+            handleLeave(socket, roomId, true); // Explicit leave
         });
 
         socket.on('disconnect', () => {
             console.log('User disconnected:', socket.id);
-            // Find rooms user was in and handle leave
+            // Find rooms user was in and handle leave/disconnect
             rooms.forEach((room, roomId) => {
-                if (room.players.find(p => p.id === socket.id)) {
-                    handleLeave(socket, roomId);
+                const player = room.players.find(p => p.id === socket.id);
+                if (player) {
+                    handleDisconnect(socket, roomId, player);
                 }
             });
         });
 
-        const handleLeave = async (socket, roomId) => {
+        const handleDisconnect = (socket, roomId, player) => {
+            const room = rooms.get(roomId);
+            if (!room) return;
+
+            // If game is in progress (2 players), start grace period
+            if (room.players.length === 2) {
+                console.log(`Player ${player.username} disconnected. Starting grace period...`);
+                player.connected = false;
+
+                // Notify opponent
+                io.to(roomId).emit('player_disconnected', { username: player.username });
+
+                // Set timeout (e.g., 60 seconds)
+                player.disconnectTimeout = setTimeout(() => {
+                    console.log(`Player ${player.username} timed out. Forfeiting.`);
+                    handleLeave(socket, roomId, false); // Treat as leave after timeout
+                }, 60000); // 60 seconds
+            } else {
+                // If not in game (or waiting), just leave immediately ?? 
+                // Actually, maybe better to keep them if they refresh in lobby? 
+                // For now, if waiting for opponent, we remove them to clean up empty rooms.
+                handleLeave(socket, roomId, true);
+            }
+        };
+
+        const handleLeave = async (socket, roomId, isExplicit) => {
             const room = rooms.get(roomId);
             if (!room) return;
 
             // Check if game was in progress (2 players)
             if (room.players.length === 2) {
+                // Determine who is leaving/timing out
+                // Note: socket.id might match, OR if it was a timeout, we need to find via player object
+                // If it's a timeout, the socket.id might be stale if they tried to reconnect but failed? 
+                // Actually, handleDisconnect passes the 'player' object reference which has the timeout.
+
+                // We need to find "who is the leaver". 
+                // If socket.id matches a player, that's the leaver.
                 const leaver = room.players.find(p => p.id === socket.id);
+
+                // Wait, if this is called from Timeout, socket.id is correct from the closure.
+
                 const winner = room.players.find(p => p.id !== socket.id);
 
                 if (leaver && winner) {
-                    console.log(`Player ${leaver.username} left. Winner: ${winner.username}`);
+                    console.log(`Player ${leaver.username} left/timed out. Winner: ${winner.username}`);
+
+                    // Clear any pending timeouts just in case
+                    if (leaver.disconnectTimeout) clearTimeout(leaver.disconnectTimeout);
+                    if (winner.disconnectTimeout) clearTimeout(winner.disconnectTimeout);
 
                     // Update Stats
                     if (supabase) {
@@ -141,7 +215,7 @@ module.exports = (io, supabase) => {
                     // Notify remaining player of win
                     io.to(roomId).emit('game_ended', {
                         winner: winner.color,
-                        reason: 'opponent_left'
+                        reason: isExplicit ? 'opponent_left' : 'opponent_timeout'
                     });
                 }
             }

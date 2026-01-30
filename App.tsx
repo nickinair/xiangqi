@@ -58,18 +58,25 @@ const App: React.FC = () => {
 
   const myColor = remoteRoom?.players.find((p: any) => p.username === currentUser?.username)?.color as PlayerColor | undefined;
   const opponent = remoteRoom?.players.find((p: any) => p.username !== currentUser?.username);
+  const [disconnectedOpponent, setDisconnectedOpponent] = useState<string | null>(null);
 
   // --- Effects ---
+  // Auto-rejoin on reconnection if we were in a room
   useEffect(() => {
-    if (socket) {
-      socket.on('rooms_update', (rooms: any[]) => {
-        setAvailableRooms(rooms);
+    if (isConnected && remoteRoom && socket && currentUser) {
+      console.log("Socket reconnected, attempting to re-join room:", remoteRoom.id);
+      socket.emit('join_room', { roomId: remoteRoom.id, username: currentUser.username }, (res: any) => {
+        if (res.success) {
+          console.log("Re-joined room successfully");
+          setRemoteRoom(res.room); // Update room state in case it changed
+        } else {
+          console.error("Failed to re-join room:", res.error);
+          // If room error (e.g. doesn't exist), maybe clear remoteRoom?
+          // setRemoteRoom(null); 
+        }
       });
-      return () => {
-        socket.off('rooms_update');
-      };
     }
-  }, [socket]);
+  }, [isConnected]);
 
   useEffect(() => {
     // Load all saved users
@@ -155,12 +162,33 @@ const App: React.FC = () => {
       console.log("Opponent left room");
     });
 
+    socket.on('player_disconnected', ({ username }: { username: string }) => {
+      console.log(`Player ${username} disconnected`);
+      setDisconnectedOpponent(username);
+    });
+
+    socket.on('player_reconnected', ({ username }: { username: string }) => {
+      console.log(`Player ${username} reconnected`);
+      setDisconnectedOpponent(null);
+    });
+
+    socket.on('game_state_sync', ({ gameState: syncedState }: { gameState: GameState }) => {
+      console.log("Synced game state from server");
+      setGameState(prev => ({
+        ...prev,
+        ...syncedState
+      }));
+    });
+
     return () => {
       socket.off('player_joined');
       socket.off('game_start');
       socket.off('opponent_move');
       socket.off('game_ended');
       socket.off('player_left');
+      socket.off('player_disconnected');
+      socket.off('player_reconnected');
+      socket.off('game_state_sync');
     };
   }, [socket]);
 
@@ -520,6 +548,7 @@ const App: React.FC = () => {
       }
       setRemoteRoom(null);
       setRoom(null);
+      setDisconnectedOpponent(null);
       // Also reset game state to initial to avoid showing old state next time
       setGameState({
         pieces: INITIAL_BOARD_SETUP(),
@@ -534,6 +563,24 @@ const App: React.FC = () => {
     }
     setShowExitConfirm(false);
   };
+
+  // Re-declare listener for rooms_update inside the effect where we need it or keep separate?
+  // The original effect lines 63-72 was replaced in the first chunk, better verify we didn't lose it.
+  // Wait, I replaced lines 59-72 in the first chunk but I put the `rooms_update` effect back? 
+  // Checking the replacement...
+  // "Auto-rejoin on reconnection..." I did NOT put the rooms_update effect back in the first chunk! 
+  // I need to add it here or in another chunk.
+
+  useEffect(() => {
+    if (socket) {
+      socket.on('rooms_update', (rooms: any[]) => {
+        setAvailableRooms(rooms);
+      });
+      return () => {
+        socket.off('rooms_update');
+      };
+    }
+  }, [socket]);
 
   const confirmExit = () => {
     // Record loss logic for online games if exiting early
@@ -835,27 +882,32 @@ const App: React.FC = () => {
                 {availableRooms.length === 0 ? (
                   <div className="text-center text-stone-500 py-8">No active rooms found. Create one!</div>
                 ) : (
-                  availableRooms.map(r => (
-                    <div key={r.id} className="flex items-center justify-between p-4 border rounded-lg hover:border-amber-300 transition-colors bg-stone-50">
-                      <div>
-                        <div className="font-bold text-stone-800">{r.name || `Room ${r.id}`}</div>
-                        <div className="text-xs text-stone-500">{t.host}: {r.id}</div>
+                  availableRooms.map((r: any) => {
+                    const isMyRoom = r.playerNames?.includes(currentUser?.username);
+                    const isFull = r.players >= 2 && !isMyRoom;
+
+                    return (
+                      <div key={r.id} className="flex items-center justify-between p-4 border rounded-lg hover:border-amber-300 transition-colors bg-stone-50">
+                        <div>
+                          <div className="font-bold text-stone-800">{r.name || `Room ${r.id}`}</div>
+                          <div className="text-xs text-stone-500">{t.host}: {r.id}</div>
+                        </div>
+                        <div className="flex items-center gap-4">
+                          <span className={`text-xs px-2 py-1 rounded-full ${r.players >= 2 ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+                            {r.players >= 2 ? (isMyRoom ? t.rejoin : 'Full') : t.waiting}
+                          </span>
+                          {!isFull && (
+                            <button
+                              onClick={() => joinRoom(r.id)}
+                              className="text-amber-600 hover:underline text-sm font-bold"
+                            >
+                              {isMyRoom ? t.rejoin : t.join}
+                            </button>
+                          )}
+                        </div>
                       </div>
-                      <div className="flex items-center gap-4">
-                        <span className={`text-xs px-2 py-1 rounded-full ${r.players < 2 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                          {r.players < 2 ? t.waiting : 'Full'}
-                        </span>
-                        {r.players < 2 && (
-                          <button
-                            onClick={() => joinRoom(r.id)}
-                            className="text-amber-600 hover:underline text-sm font-bold"
-                          >
-                            {t.join}
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             </div>
@@ -919,6 +971,24 @@ const App: React.FC = () => {
               >
                 {t.confirm}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Disconnected Overlay */}
+      {disconnectedOpponent && !gameState.winner && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white rounded-2xl p-6 shadow-2xl max-w-sm w-full text-center">
+            <div className="w-16 h-16 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center mx-auto mb-4 animate-pulse">
+              <Globe size={32} />
+            </div>
+            <h3 className="text-xl font-bold text-stone-800 mb-2">{t.opponentDisconnected}</h3>
+            <p className="text-stone-500 mb-6">{t.waitingForReconnect}</p>
+            <div className="w-full bg-stone-100 rounded-full h-2 overflow-hidden relative">
+              <div className="absolute inset-y-0 left-0 bg-amber-500 w-1/3 animate-[shimmer_1.5s_infinite] rounded-full" />
+              {/* Fallback animation if custom keyframe missing */}
+              <div className="h-full bg-amber-500 w-full animate-pulse origin-left scale-x-50" />
             </div>
           </div>
         </div>
