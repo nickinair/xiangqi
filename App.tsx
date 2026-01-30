@@ -135,13 +135,20 @@ const App: React.FC = () => {
     socket.on('opponent_move', (data: any) => {
       console.log('Opponent moved', data.move);
       playMoveSound();
-      setGameState(prev => ({
-        ...prev,
-        pieces: data.gameState.pieces,
-        turn: data.gameState.turn,
-        lastMove: data.move,
-        history: data.gameState.history
-      }));
+
+      setGameState(prev => {
+        // Optimistically update history locally
+        // The data.gameState from server no longer has history to save bandwidth
+        const newHistory = [...prev.history, prev.pieces];
+
+        return {
+          ...prev,
+          pieces: data.gameState.pieces,
+          turn: data.gameState.turn,
+          lastMove: data.move,
+          history: newHistory
+        };
+      });
 
       if (isInCheck(data.gameState.pieces, data.gameState.turn)) {
         playCheckSound();
@@ -417,10 +424,13 @@ const App: React.FC = () => {
 
       // Socket Emit
       if (gameMode === GameMode.ONLINE && socket && remoteRoom) {
+        // Optimize payload: Don't send history
+        const { history, ...lightweightState } = newGameState;
+
         socket.emit('make_move', {
           roomId: remoteRoom.id,
           move: { from, to },
-          gameState: newGameState
+          gameState: lightweightState
         });
 
         if (winner) {
