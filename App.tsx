@@ -59,6 +59,8 @@ const App: React.FC = () => {
   const myColor = remoteRoom?.players.find((p: any) => p.username === currentUser?.username)?.color as PlayerColor | undefined;
   const opponent = remoteRoom?.players.find((p: any) => p.username !== currentUser?.username);
   const [disconnectedOpponent, setDisconnectedOpponent] = useState<string | null>(null);
+  const [showTimeoutDecision, setShowTimeoutDecision] = useState(false);
+  const [canClaimWin, setCanClaimWin] = useState(false);
 
   // --- Effects ---
   // Auto-rejoin on reconnection if we were in a room
@@ -170,6 +172,14 @@ const App: React.FC = () => {
     socket.on('player_reconnected', ({ username }: { username: string }) => {
       console.log(`Player ${username} reconnected`);
       setDisconnectedOpponent(null);
+      setShowTimeoutDecision(false);
+      setCanClaimWin(false);
+    });
+
+    socket.on('opponent_timeout_prompt', () => {
+      console.log('Opponent timed out, showing decision prompt');
+      setShowTimeoutDecision(true);
+      setCanClaimWin(true);
     });
 
     socket.on('game_state_sync', ({ gameState: syncedState }: { gameState: GameState }) => {
@@ -188,6 +198,7 @@ const App: React.FC = () => {
       socket.off('player_left');
       socket.off('player_disconnected');
       socket.off('player_reconnected');
+      socket.off('opponent_timeout_prompt');
       socket.off('game_state_sync');
     };
   }, [socket]);
@@ -549,6 +560,8 @@ const App: React.FC = () => {
       setRemoteRoom(null);
       setRoom(null);
       setDisconnectedOpponent(null);
+      setShowTimeoutDecision(false);
+      setCanClaimWin(false);
       // Also reset game state to initial to avoid showing old state next time
       setGameState({
         pieces: INITIAL_BOARD_SETUP(),
@@ -598,6 +611,23 @@ const App: React.FC = () => {
       setCurrentUser(updatedUser);
     }
     exitGame();
+  };
+
+  const handleClaimWin = () => {
+    if (socket && remoteRoom) {
+      socket.emit('claim_timeout_win', { roomId: remoteRoom.id });
+    }
+    setShowTimeoutDecision(false);
+    setCanClaimWin(false);
+  };
+
+  const handleKeepWaiting = () => {
+    if (socket && remoteRoom) {
+      socket.emit('keep_waiting', { roomId: remoteRoom.id });
+    }
+    setShowTimeoutDecision(false);
+    // disconnectedOpponent state remains true, so overlay shows "Waiting..."
+    // canClaimWin remains true, so we can show a button on the overlay
   };
 
   // --- Components ---
@@ -977,7 +1007,7 @@ const App: React.FC = () => {
       )}
 
       {/* Disconnected Overlay */}
-      {disconnectedOpponent && !gameState.winner && (
+      {disconnectedOpponent && !gameState.winner && !showTimeoutDecision && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 animate-fade-in">
           <div className="bg-white rounded-2xl p-6 shadow-2xl max-w-sm w-full text-center">
             <div className="w-16 h-16 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center mx-auto mb-4 animate-pulse">
@@ -990,41 +1020,79 @@ const App: React.FC = () => {
               {/* Fallback animation if custom keyframe missing */}
               <div className="h-full bg-amber-500 w-full animate-pulse origin-left scale-x-50" />
             </div>
+            {canClaimWin && (
+              <button
+                onClick={handleClaimWin}
+                className="mt-6 w-full py-3 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-lg shadow-lg shadow-amber-200 transition-all transform hover:scale-105 active:scale-95 animate-bounce-in"
+              >
+                {t.claimWin}
+              </button>
+            )}
           </div>
         </div>
       )}
 
-      {/* Winner Overlay */}
-      {gameState.winner && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 animate-fade-in">
-          <div className="bg-white rounded-2xl p-8 text-center shadow-2xl max-w-sm w-full">
-            <Trophy size={64} className="mx-auto text-yellow-500 mb-4 animate-bounce" />
-            <h2 className="text-3xl font-serif font-bold text-stone-800 mb-2">
-              {gameState.endReason === 'opponent_left'
-                ? t.opponentLeftWin
-                : (gameState.winner === PlayerColor.RED ? t.red : t.green) + " " + t.wins
-              }
-            </h2>
-            {gameState.endReason === 'opponent_left' && (
-              <p className="text-stone-500 mb-4">You have won the game.</p>
-            )}
-            <div className="flex flex-col gap-3 justify-center mt-6">
-              <button
-                onClick={resetGame}
-                className="w-full py-3 bg-stone-800 text-amber-50 rounded-lg hover:bg-stone-900 font-bold"
-              >
-                {t.playAgain}
-              </button>
-              <button
-                onClick={exitGame}
-                className="w-full py-3 text-stone-600 hover:text-stone-900"
-              >
-                {t.backToMenu}
-              </button>
+      {/* Timeout Decision Modal */}
+      {
+        showTimeoutDecision && !gameState.winner && (
+          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 animate-bounce-in">
+            <div className="bg-white rounded-2xl p-6 shadow-2xl max-w-sm w-full">
+              <h3 className="text-xl font-bold mb-2 text-stone-800">{t.opponentTimeoutTitle}</h3>
+              <p className="text-stone-600 mb-6 font-medium">
+                {t.opponentTimeoutMsg}
+              </p>
+              <div className="flex gap-4">
+                <button
+                  onClick={handleKeepWaiting}
+                  className="flex-1 py-3 rounded-lg border border-stone-300 text-stone-600 font-medium hover:bg-stone-50"
+                >
+                  {t.keepWaiting}
+                </button>
+                <button
+                  onClick={handleClaimWin}
+                  className="flex-1 py-3 rounded-lg bg-amber-500 text-white font-medium hover:bg-amber-600 shadow-md"
+                >
+                  {t.claimWin}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      }
+
+      {/* Winner Overlay */}
+      {
+        gameState.winner && (
+          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 animate-fade-in">
+            <div className="bg-white rounded-2xl p-8 text-center shadow-2xl max-w-sm w-full">
+              <Trophy size={64} className="mx-auto text-yellow-500 mb-4 animate-bounce" />
+              <h2 className="text-3xl font-serif font-bold text-stone-800 mb-2">
+                {gameState.endReason === 'opponent_left'
+                  ? t.opponentLeftWin
+                  : (gameState.winner === PlayerColor.RED ? t.red : t.green) + " " + t.wins
+                }
+              </h2>
+              {gameState.endReason === 'opponent_left' && (
+                <p className="text-stone-500 mb-4">You have won the game.</p>
+              )}
+              <div className="flex flex-col gap-3 justify-center mt-6">
+                <button
+                  onClick={resetGame}
+                  className="w-full py-3 bg-stone-800 text-amber-50 rounded-lg hover:bg-stone-900 font-bold"
+                >
+                  {t.playAgain}
+                </button>
+                <button
+                  onClick={exitGame}
+                  className="w-full py-3 text-stone-600 hover:text-stone-900"
+                >
+                  {t.backToMenu}
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      }
 
       {/* --- Mobile Layout: Top Bar (Opponent) --- */}
       <div className="flex md:hidden w-full bg-white p-3 shadow-sm z-10 justify-between items-center h-16 shrink-0">
@@ -1205,7 +1273,7 @@ const App: React.FC = () => {
         </div>
       </div>
 
-    </div>
+    </div >
   );
 };
 

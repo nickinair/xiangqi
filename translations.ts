@@ -76,6 +76,10 @@ export const TRANSLATIONS = {
     opponentDisconnected: '对手已断线',
     waitingForReconnect: '正在等待重连...',
     rejoin: '重返房间',
+    opponentTimeoutTitle: '对手连接超时',
+    opponentTimeoutMsg: '对手未能及时重连。您可以选择直接获胜，或者继续等待。',
+    keepWaiting: '继续等待',
+    claimWin: '判我获胜',
   },
   en: {
     appTitle: 'Zen Xiangqi',
@@ -152,5 +156,9 @@ export const TRANSLATIONS = {
     opponentDisconnected: 'Opponent Disconnected',
     waitingForReconnect: 'Waiting for reconnection...',
     rejoin: 'Rejoin',
+    opponentTimeoutTitle: 'Opponent Timed Out',
+    opponentTimeoutMsg: 'The opponent failed to reconnect in time. You can claim victory or keep waiting.',
+    keepWaiting: 'Keep Waiting',
+    claimWin: 'Claim Win',
   }
 };

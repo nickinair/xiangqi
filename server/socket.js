@@ -155,6 +155,24 @@ module.exports = (io, supabase) => {
             });
         });
 
+        // Add handler for claiming win after timeout
+        socket.on('claim_timeout_win', ({ roomId }) => {
+            const room = rooms.get(roomId);
+            if (!room) return;
+
+            // Find the disconnected player
+            const disconnectedPlayer = room.players.find(p => !p.connected);
+            if (disconnectedPlayer) {
+                // Manually trigger leave logic for that player
+                // We use a mock object since handleLeave expects a socket-like object with an id
+                handleLeave({ id: disconnectedPlayer.id, leave: () => { } }, roomId, false);
+            }
+        });
+
+        socket.on('keep_waiting', ({ roomId }) => {
+            console.log(`Player in room ${roomId} chose to wait indefinitely.`);
+        });
+
         const handleDisconnect = (socket, roomId, player) => {
             const room = rooms.get(roomId);
             if (!room) return;
@@ -169,8 +187,16 @@ module.exports = (io, supabase) => {
 
                 // Set timeout (e.g., 60 seconds)
                 player.disconnectTimeout = setTimeout(() => {
-                    console.log(`Player ${player.username} timed out. Forfeiting.`);
-                    handleLeave(socket, roomId, false); // Treat as leave after timeout
+                    console.log(`Player ${player.username} timed out. Prompting opponent.`);
+
+                    // Find opponent
+                    const opponent = room.players.find(p => p.id !== player.id);
+                    if (opponent) {
+                        io.to(opponent.id).emit('opponent_timeout_prompt', { username: player.username });
+                    } else {
+                        // Both gone? Close room.
+                        handleLeave(socket, roomId, false);
+                    }
                 }, 60000); // 60 seconds
             } else {
                 // If not in game (or waiting), just leave immediately ?? 
@@ -180,7 +206,7 @@ module.exports = (io, supabase) => {
             }
         };
 
-        const handleLeave = async (socket, roomId, isExplicit) => {
+        const handleLeave = async (socketObj, roomId, isExplicit) => {
             const room = rooms.get(roomId);
             if (!room) return;
 
@@ -193,11 +219,11 @@ module.exports = (io, supabase) => {
 
                 // We need to find "who is the leaver". 
                 // If socket.id matches a player, that's the leaver.
-                const leaver = room.players.find(p => p.id === socket.id);
+                const leaver = room.players.find(p => p.id === socketObj.id);
 
                 // Wait, if this is called from Timeout, socket.id is correct from the closure.
 
-                const winner = room.players.find(p => p.id !== socket.id);
+                const winner = room.players.find(p => p.id !== socketObj.id);
 
                 if (leaver && winner) {
                     console.log(`Player ${leaver.username} left/timed out. Winner: ${winner.username}`);
@@ -220,13 +246,13 @@ module.exports = (io, supabase) => {
                 }
             }
 
-            room.players = room.players.filter(p => p.id !== socket.id);
-            socket.leave(roomId);
+            room.players = room.players.filter(p => p.id !== socketObj.id);
+            if (socketObj.leave) socketObj.leave(roomId);
 
             if (room.players.length === 0) {
                 rooms.delete(roomId);
             } else {
-                io.to(roomId).emit('player_left', { socketId: socket.id });
+                io.to(roomId).emit('player_left', { socketId: socketObj.id });
             }
             io.emit('rooms_update', getPublicRooms()); // Broadcast update to lobby
         };
