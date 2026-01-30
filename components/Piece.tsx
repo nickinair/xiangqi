@@ -29,8 +29,8 @@ export const Piece: React.FC<PieceProps> = ({ piece, onClick, isSelected, lastMo
         ${isSelected ? 'scale-110 -translate-y-2' : 'hover:scale-105'}
       `}
       style={{
-        left: `${(visualX / 8) * 88 + 6}%`, // Adjusted for board padding 
-        top: `${(visualY / 9) * 89 + 5.5}%`, // Adjusted for board padding
+        left: `${((50 + visualX * 100) / 900) * 100}%`, // Precise grid alignment based on SVG coordinates
+        top: `${((50 + visualY * 100) / 1000) * 100}%`, // Precise grid alignment based on SVG coordinates
         transform: 'translate(-50%, -50%)', // Center on the intersection
       }}
     >

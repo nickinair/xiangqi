@@ -26,6 +26,7 @@ const App: React.FC = () => {
   const [onlineTab, setOnlineTab] = useState<'lobby' | 'rankings'>('lobby');
   const [language, setLanguage] = useState<Language>('zh');
   const [aiDifficulty, setAiDifficulty] = useState<Difficulty>(Difficulty.MEDIUM);
+  const [isLoading, setIsLoading] = useState(false);
 
   // Login State
   const [isCreatingUser, setIsCreatingUser] = useState(false);
@@ -480,7 +481,9 @@ const App: React.FC = () => {
 
   const createRoom = () => {
     if (socket) {
+      setIsLoading(true);
       socket.emit('create_room', { username: currentUser?.username }, (res: any) => {
+        setIsLoading(false);
         if (res.success) {
           setRemoteRoom(res.room);
           resetGame();
@@ -555,9 +558,9 @@ const App: React.FC = () => {
   const LanguageSwitcher = ({ className }: { className?: string }) => (
     <button
       onClick={toggleLanguage}
-      className={className || "absolute top-4 right-4 z-50 flex items-center gap-2 bg-white/80 backdrop-blur-sm px-3 py-2 rounded-full shadow-sm hover:bg-white transition-colors text-stone-700 text-sm font-medium border border-stone-200"}
+      className={className || "absolute top-4 right-4 z-50 flex items-center gap-2 bg-white/80 backdrop-blur-sm px-2.5 py-1.5 rounded-full shadow-sm hover:bg-white transition-colors text-stone-700 text-xs font-medium border border-stone-200"}
     >
-      <Languages size={16} />
+      <Languages size={14} />
       {t.switchLang}
     </button>
   );
@@ -695,16 +698,16 @@ const App: React.FC = () => {
             {/* Rules Button */}
             <button
               onClick={() => setShowRules(true)}
-              className="flex items-center gap-1 bg-amber-50 px-3 py-2 rounded-full text-amber-600 text-sm hover:bg-amber-100 transition-colors"
+              className="flex items-center gap-1 bg-amber-50 px-2.5 py-1.5 rounded-full text-amber-600 text-xs hover:bg-amber-100 transition-colors"
             >
-              <BookOpen size={16} /> <span>{t.howToPlay}</span>
+              <BookOpen size={14} /> <span>{t.howToPlay}</span>
             </button>
-            <LanguageSwitcher className="flex items-center gap-1 bg-stone-50 px-3 py-2 rounded-full text-stone-600 text-sm hover:bg-stone-100 transition-colors" />
+            <LanguageSwitcher className="flex items-center gap-1 bg-stone-50 px-2.5 py-1.5 rounded-full text-stone-600 text-xs hover:bg-stone-100 transition-colors" />
             <button
               onClick={handleLogout}
-              className="flex items-center gap-1 bg-red-50 px-3 py-2 rounded-full text-red-500 text-sm hover:bg-red-100 transition-colors"
+              className="flex items-center gap-1 bg-red-50 px-2.5 py-1.5 rounded-full text-red-500 text-xs hover:bg-red-100 transition-colors"
             >
-              <LogOut size={16} /> <span>{t.logout}</span>
+              <LogOut size={14} /> <span>{t.logout}</span>
             </button>
           </div>
         </header>
@@ -780,9 +783,17 @@ const App: React.FC = () => {
                 <h2 className="text-2xl font-bold text-stone-800 mb-2">{t.createRoom}</h2>
                 <button
                   onClick={createRoom}
-                  className="bg-amber-500 hover:bg-amber-600 text-white px-8 py-3 rounded-xl font-bold shadow-lg shadow-amber-200 transition-all transform hover:scale-105"
+                  disabled={isLoading}
+                  className={`bg-amber-500 hover:bg-amber-600 text-white px-8 py-3 rounded-xl font-bold shadow-lg shadow-amber-200 transition-all transform ${isLoading ? 'opacity-70 cursor-not-allowed' : 'hover:scale-105'}`}
                 >
-                  {t.createRoom}
+                  {isLoading ? (
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Creating...
+                    </div>
+                  ) : (
+                    t.createRoom
+                  )}
                 </button>
               </div>
 
@@ -954,10 +965,27 @@ const App: React.FC = () => {
           <div className="leading-tight">
             <div className="font-bold text-sm text-stone-800">
               {gameMode === GameMode.AI
-                ? t.zenAI
-                : (gameMode === GameMode.ONLINE
-                  ? (opponent ? opponent.username : t.waitingForOpponent)
-                  : t.green
+                ? (
+                  <div className="flex flex-col">
+                    <div className="font-bold text-sm text-stone-800">{t.zenAI}</div>
+                    <select
+                      value={aiDifficulty}
+                      onChange={(e) => setAiDifficulty(e.target.value as Difficulty)}
+                      className="mt-0.5 p-0 text-xs border border-emerald-200 rounded bg-white text-emerald-800 focus:outline-none focus:ring-1 focus:ring-emerald-500 max-w-[100px]"
+                    >
+                      <option value={Difficulty.EASY}>Easy</option>
+                      <option value={Difficulty.MEDIUM}>Medium</option>
+                      <option value={Difficulty.HARD}>Hard</option>
+                    </select>
+                  </div>
+                )
+                : (
+                  <div className="font-bold text-sm text-stone-800">
+                    {gameMode === GameMode.ONLINE
+                      ? (opponent ? opponent.username : t.waitingForOpponent)
+                      : t.green
+                    }
+                  </div>
                 )
               }
             </div>
@@ -1040,7 +1068,7 @@ const App: React.FC = () => {
             <RotateCcw size={18} /> {t.requestUndo}
           </button>
           <button onClick={handleExitRequest} className="flex items-center gap-2 p-3 bg-white rounded-lg shadow-sm hover:bg-stone-50 text-red-600 transition-colors">
-            {gameMode === GameMode.ONLINE ? <DoorOpen size={18} /> : <Flag size={18} />}
+            {gameMode === GameMode.ONLINE ? <DoorOpen size={18} /> : <LogOut size={18} />}
             {gameMode === GameMode.ONLINE ? t.exitRoom : t.surrender}
           </button>
         </div>
@@ -1101,7 +1129,7 @@ const App: React.FC = () => {
               onClick={handleExitRequest}
               className="p-2 bg-stone-100 rounded-full text-red-500 active:scale-95 transition-transform"
             >
-              {gameMode === GameMode.ONLINE ? <DoorOpen size={20} /> : <Flag size={20} />}
+              {gameMode === GameMode.ONLINE ? <DoorOpen size={20} /> : <LogOut size={20} />}
             </button>
           </div>
         </div>

@@ -36,7 +36,7 @@ export const Board: React.FC<BoardProps> = ({ gameState, onSquareClick, onPieceC
     <div className="relative w-full max-w-[600px] aspect-[9/10] bg-[#e4c083] rounded-lg shadow-2xl border-[12px] border-[#ba702e] p-4 mx-auto select-none overflow-hidden wood-texture">
 
       {/* Board Markings SVG Layer */}
-      <svg className="absolute inset-0 w-full h-full p-[inherit] pointer-events-none" viewBox="0 0 900 1000" style={{ transform: isFlipped ? 'rotate(180deg)' : 'none' }}>
+      <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 900 1000" style={{ transform: isFlipped ? 'rotate(180deg)' : 'none' }}>
         <defs>
           <pattern id="grid" width="100" height="100" patternUnits="userSpaceOnUse">
             {/* Small pattern if needed, but we draw lines manually for standard Xiangqi */}
@@ -149,8 +149,9 @@ export const Board: React.FC<BoardProps> = ({ gameState, onSquareClick, onPieceC
             // Let's use the standard calc: left: (x * 100/8)%. 
             // The magic numbers might have been fine tuning.
             // I'll stick to the original magic numbers logic but applied to visual pos.
-            left: `${(getVisualPos(lastMove.from).x / 8) * 88 + 6}%`,
-            top: `${(getVisualPos(lastMove.from).y / 9) * 89 + 5.5}%`,
+            // Using precise SVG coordinate system for alignment
+            left: `${((getVisualPos(lastMove.from).x * 100 + 50) / 900) * 100}%`,
+            top: `${((getVisualPos(lastMove.from).y * 100 + 50) / 1000) * 100}%`,
           }}
         />
       )}
